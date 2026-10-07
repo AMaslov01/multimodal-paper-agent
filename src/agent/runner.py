@@ -8,7 +8,7 @@ from pathlib import Path
 
 from src.agent.graph import build_graph
 from src.agent.state import AgentState
-from src.cache.qa_cache import QACache, normalize_question
+from src.cache.qa_cache import QACache, lookup_with_embedding
 from src.config import (
     CACHE_ROOT,
     COMPOSE_BUDGET_S,
@@ -23,7 +23,7 @@ from src.index.embeddings import build_embeddings
 from src.index.retriever import Plan, Retriever
 from src.index.vectorstore import get_or_create_collection, has_documents, upsert_chunks
 from src.ingest.pipeline import IngestArtifacts, run_ingest
-from src.io.answers import format_block, stub_block
+from src.io.answers import format_block
 from src.io.questions import QuestionsDoc
 from src.utils.logging import log
 from src.utils.timing import run_with_timeout
@@ -68,24 +68,6 @@ def _known_sections(chunks) -> tuple[set[str], set[str]]:
         if st:
             known_top.add(st)
     return known_numbers, known_top
-
-
-def _try_qa_cache(qa: QACache, question: str, embeddings) -> tuple[str, list[float]] | None:
-    """Возвращает (cached_answer, embedding) если хит, иначе None.
-    Эмбеддинг возвращается всегда — переиспользуется retriever-ом при промахе."""
-    try:
-        emb = embeddings.embed_query(question)
-    except Exception as e:
-        log.warning(f"embed_query failed: {e}")
-        emb = []
-    hit = qa.lookup(question, emb)
-    if hit is not None:
-        return hit.answer, emb
-    return None
-
-
-def _no_answer(idx: int, fmt) -> str:
-    return stub_block(idx, fmt)
 
 
 def _is_no_answer(text: str) -> bool:
@@ -145,7 +127,7 @@ def _fallback_no_answer_from_context(
     previous_context: str,
     deadline_ts: float,
 ) -> str:
-    """Best-effort answer without another retrieval/search pass."""
+    """Best-effort answer from evidence already loaded into this run."""
     remaining = deadline_ts - time.time()
     if remaining < 10:
         return "no answer"
@@ -153,12 +135,11 @@ def _fallback_no_answer_from_context(
     prompt = f"""\
 Answer in English only.
 
-The retrieval-based answer for this question was "no answer".
-Do not run a new search. Use only your own model knowledge, the previous Q/A,
-and the already loaded article context below.
-Give the best short answer you can. If the question depends on a previous
-question, use the previous Q/A to resolve that reference.
-Do not answer "No answer" unless there is absolutely no possible answer.
+The scoped retrieval answer for this question was "no answer".
+Do not run a new search. Use only the article map, loaded article chunks,
+and facts explicitly supported by the previous Q/A below.
+If the available evidence does not support an answer, write exactly "no answer".
+Do not fill gaps with general model knowledge or unsupported inference.
 
 Loaded article context/map:
 {article_readme[:12000]}
@@ -241,7 +222,7 @@ def _postprocess_answers(
             answer=text,
             deadline_ts=deadline_ts,
         )
-        if fallback_used:
+        if fallback_used and not _is_no_answer(text):
             text = _append_uncertainty_note(text)
         processed.append(text or "no answer")
     return processed
@@ -303,22 +284,19 @@ def run_all(qdoc: QuestionsDoc, deadline_ts: float | None = None) -> list[str]:
             log.warning(f"q{q.idx}: deadline reached, leaving stub")
             continue
         # QA-cache lookup
-        cached = _try_qa_cache(qa, q.text, embeddings)
-        emb_for_q: list[float] = []
-        if cached is not None:
-            ans, emb_for_q = cached
-            final_answers[slot] = ans or "no answer"
-            embed_cache[q.text] = emb_for_q  # переиспользуем
+        cached_entry, emb_for_q = lookup_with_embedding(qa, q.text, embeddings)
+        if emb_for_q:
+            embed_cache[q.text] = emb_for_q
+        if cached_entry is not None:
+            final_answers[slot] = cached_entry.answer or "no answer"
             log.info(f"q{q.idx}: QA-cache hit")
             continue
-        if cached is None and q.text in embed_cache:
-            emb_for_q = embed_cache[q.text]
 
         try:
             state: AgentState = {
-                "question": q.text, "question_index": q.idx,
-                "format_kind": qdoc.fmt, "article_readme": artifacts.readme,
-                "deadline_ts": deadline_ts, "timings": {},
+                "question": q.text,
+                "article_readme": artifacts.readme,
+                "timings": {},
             }
             result = graph_p1.invoke(state, config={"recursion_limit": 25})
             plan: Plan | None = result.get("plan")
@@ -355,9 +333,9 @@ def run_all(qdoc: QuestionsDoc, deadline_ts: float | None = None) -> list[str]:
                 break
             try:
                 state: AgentState = {
-                    "question": q_text, "question_index": q_idx,
-                    "format_kind": qdoc.fmt, "article_readme": artifacts.readme,
-                    "deadline_ts": deadline_ts, "timings": {},
+                    "question": q_text,
+                    "article_readme": artifacts.readme,
+                    "timings": {},
                 }
                 result = graph_p2.invoke(state, config={"recursion_limit": 25})
                 txt = (result.get("draft_answer") or "").strip()
@@ -367,8 +345,8 @@ def run_all(qdoc: QuestionsDoc, deadline_ts: float | None = None) -> list[str]:
                     qa.save(q_text, txt or "no answer",
                             embed_cache.get(q_text) or [], doc_ids,
                             (result.get("plan").__dict__ if result.get("plan") else {}))
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"qa.save failed: {e}")
             except Exception as e:
                 log.exception(f"q{q_idx}: pass2 error: {e}")
 

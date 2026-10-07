@@ -42,11 +42,7 @@ QA_CACHE_FILE = "qa_cache.jsonl"
 # --- Тайм-бюджет (сек) ---
 GLOBAL_BUDGET_S = 870
 PLANNER_BUDGET_S = 15
-RETRIEVE_BUDGET_S = 5
-VISUAL_BUDGET_S = 30
 COMPOSE_BUDGET_S = 45
-FORMATTER_BUDGET_S = 1
-MAX_PER_QUESTION_S = 90
 MIN_PER_QUESTION_S = 8             # меньше — сразу стаб
 
 VISION_TOTAL_BUDGET_S = 240        # после — caption-only фолбэк
@@ -60,9 +56,6 @@ EMBED_BATCH = 32
 # --- README / структура ---
 README_MAX_CHARS = 16000
 SECTION_SUMMARY_MAX_SECTIONS = 60      # > → пропускаем шаг
-SYNTH_SUBSECTION_MIN_CHARS = 8000      # секция длиннее → возможно делим
-SYNTH_SUBSECTION_MAX_NEW = 6           # лимит секций для синтетики
-
 # --- Backoff ---
 LLM_RETRY_ATTEMPTS = 3
 LLM_RETRY_BASE_DELAY_S = 2.0

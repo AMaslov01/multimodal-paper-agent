@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from src.agent.nodes import (
-    formatter_node,
     make_compose,
     make_planner,
     make_retrieve,
@@ -31,13 +30,11 @@ def build_graph(*, gigachat_chat, gigachat_planner, gigachat_vision,
     g.add_node("retrieve", make_retrieve(retriever, embeddings, embed_cache))
     g.add_node("visual", make_visual_augment(gigachat_vision, figure_records))
     g.add_node("compose", make_compose(gigachat_chat, deferred=deferred))
-    g.add_node("formatter", formatter_node)
 
     g.add_edge(START, "planner")
     g.add_edge("planner", "retrieve")
     g.add_conditional_edges("retrieve", _needs_vision,
                             {"visual": "visual", "compose": "compose"})
     g.add_edge("visual", "compose")
-    g.add_edge("compose", "formatter")
-    g.add_edge("formatter", END)
+    g.add_edge("compose", END)
     return g.compile()

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import QA_CACHE_FILE, QA_CACHE_SIM_THRESHOLD
+from src.utils.logging import log
 
 _PUNCT = re.compile(r"[^\w\s]+", re.UNICODE)
 _WS = re.compile(r"\s+")
@@ -135,3 +136,21 @@ class QACache:
             "n_cache_misses": self.misses,
             "mean_hit_similarity": mean_sim,
         }
+
+
+def lookup_with_embedding(
+    cache: QACache,
+    question: str,
+    embeddings,
+) -> tuple[QAEntry | None, list[float]]:
+    """Look up a question and retain its embedding for downstream retrieval.
+
+    A cache miss still returns the computed embedding so the retrieval stage
+    does not issue the same model call a second time.
+    """
+    try:
+        embedding = embeddings.embed_query(question)
+    except Exception as exc:
+        log.warning(f"embed_query failed: {exc}")
+        embedding = []
+    return cache.lookup(question, embedding), embedding

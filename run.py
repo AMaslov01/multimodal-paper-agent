@@ -13,6 +13,7 @@ import time
 import traceback
 from pathlib import Path
 
+from src.config import GLOBAL_BUDGET_S
 from src.io.answers import stub_block, write_answers
 from src.io.questions import QuestionsDoc, load_questions
 
@@ -20,9 +21,6 @@ DATA_DIR = Path("data")
 OUTPUT_DIR = Path("output")
 QUESTIONS_PATH = DATA_DIR / "questions.txt"
 ANSWERS_PATH = OUTPUT_DIR / "answers.txt"
-
-GLOBAL_BUDGET_S = 870
-
 
 def _load_dotenv_if_available() -> None:
     try:

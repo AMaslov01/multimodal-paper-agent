@@ -1,202 +1,86 @@
-# Multimodal Scientific Paper QA Agent
+# Multimodal Scientific Paper Agent
 
-An autonomous RAG agent that answers questions about scientific papers from LaTeX sources, PDFs, and figures. It was built around GigaChat-2-Max for a hackathon environment with a strict 15-minute runtime limit and a fixed output format.
+A retrieval-augmented agent that answers questions about scientific papers from
+LaTeX source, equations, tables, and figures. It was built for a hackathon with
+GigaChat-2-Max, a fixed answer format, and a 15-minute runtime limit.
 
-## What I implemented
+## How it works
 
-I built the end-to-end solution, including:
+1. Discovers the LaTeX entry point and expands nested `\input`/`\include` files.
+2. Extracts sections, equations, captions, labels, and cross-references.
+3. Converts paper figures to images and produces searchable visual descriptions.
+4. Builds section-aware chunks and indexes them with GigaChat embeddings in ChromaDB.
+5. Uses a LangGraph workflow to plan retrieval, search likely sections, inspect a
+   figure when needed, and compose an evidence-grounded answer.
+6. Falls back to a global search when scoped evidence is weak and writes a valid
+   placeholder when the available paper context does not support an answer.
 
-- recursive discovery and expansion of multi-file LaTeX projects;
-- extraction of sections, equations, captions, labels, and cross-references;
-- PDF-to-image conversion and vision-based figure descriptions;
-- section-aware chunking and semantic indexing with GigaChat embeddings and ChromaDB;
-- a LangGraph workflow for retrieval planning, scoped search, optional visual analysis, answer generation, and formatting;
-- global retrieval fallbacks, per-question deadlines, cached intermediate artifacts, and valid fallback output when a component fails;
-- a local evaluation harness for retrieval coverage, synthetic recall@5, figure hit rate, latency, and answer self-checks.
+Intermediate artifacts, embeddings, and prior answers are cached per paper. The
+repository also includes an evaluation harness for retrieval coverage, synthetic
+recall@5, figure hit rate, latency, and answer self-checks.
 
-The retrieval stage is planner-guided: the model first identifies likely sections and whether a figure is relevant, then searches within that scope and falls back to the full paper when the evidence is insufficient. Figure questions can trigger a separate vision step before the final answer is composed.
+## Repository layout
 
-## Quick start
+```text
+run.py                 Entry point and output guarantees
+src/ingest/            LaTeX discovery, parsing, figures, and chunking
+src/index/             Embeddings, ChromaDB storage, and retrieval
+src/agent/             LangGraph workflow and prompts
+src/cache/             Paper and question-answer caches
+src/io/                Question parsing and answer formatting
+src/utils/eval.py      Local evaluation harness
+```
+
+## Setup
+
+Python 3.10-3.13 and [`uv`](https://docs.astral.sh/uv/) are recommended.
 
 ```bash
-uv venv
-uv sync
+uv sync --frozen
 cp .env.example .env
 ```
 
-Add your GigaChat credentials to `.env`, place the paper materials and `questions.txt` in `data/`, then run. Keep `.env` local and never commit credentials to Git.
+Add your own GigaChat credentials to `.env`:
 
 ```bash
-python run.py
-python src/utils/check_submission.py
-```
-
-The generated answers are written to `output/answers.txt`.
-
-To run the local evaluation harness:
-
-```bash
-python -m src.utils.eval --article-dir data --mode all
-```
-
----
-
-## Original task specification
-
-You need to implement an **AI agent** powered by [GigaChat-2-Max](https://developers.sber.ru/docs/ru/gigachat/models/gigachat-2-max) that, given the materials of a scientific paper (LaTeX source, PDF, illustrations), answers questions about the paper — including questions that require **understanding figures and diagrams**.
-
----
-
-## 1. Data
- 
-### 1.1. Format
-
-- **Paper**: a folder containing **LaTeX source files** (`TeX source`) **and** a **PDF version** of the paper.
-- The **PDF** is provided for participants who prefer to use it in their solution and for development purposes; during scoring, the `data/` folder will contain **both** the TeX source and the PDF.
-- The source folder may contain:
-  - one or more `*.tex` files with the main text and/or sections;
-  - auxiliary files: `.cls`, `.sty`, `.bst`, `.bib`, etc.;
-  - images: `png`, `jpg`, `pdf` (all PDF files inside the `TeX source` folder are **single-page** images);
-  - nested **subfolders** with **arbitrary** names.
-
-### 1.2. Constraints (important for design)
-
-- The folder **structure** is **not** fixed: one paper may have a single `*.tex` file, another may have many files and subfolders;
-- The **full text** of the paper is **longer** than the model's context window;
-- For **parsing/processing LaTeX** to split and prepare the text, use **`langchain_text_splitters`**;
-
-### 1.3. Example `TeX source` Folder Contents
-
-<details>
-<summary>Example 1 (many files in root + images)</summary>
-
-```text
-.
-├── 00README.json
-├── B1937+21.png
-├── bhb_merger_rate_models.pdf
-├── cimento.cls
-├── corner_NANOGrav.pdf
-├── …
-├── new-main.tex
-├── references.bib
-└── …
-```
-
-</details>
-
-<details>
-<summary>Example 2 (figures subfolder, multiple .tex files)</summary>
-
-```text
-.
-├── 00README.json
-├── feature_learning.tex
-├── figures
-│   ├── C_xx.pdf
-│   ├── depth_scales.png
-│   └── …
-├── macros.tex
-└── stat_mech_nn_…_lecture.tex
-```
-
-</details>
-
-<details>
-<summary>Example 3 (nearly a single main .tex)</summary>
-
-```text
-.
-├── 00README.json
-├── JHEP.bst
-├── Strong-CP-Lecture-v2.bbl
-├── Strong-CP-Lecture-v2.tex
-└── tmp.txt
-```
-
-</details>
-
-### 1.4. Debug Examples
-
-- You are provided with papers for developing and debugging your agent:
-  1. [Paper #1](https://disk.yandex.ru/d/YiZBjU8xVxg88w)
-  2. [Paper #2](https://disk.yandex.ru/d/mS1__DMT4D2yng)
-- You may use any other papers if they help make the agent more robust across different formats and domains.
-
----
-
-## 2. Input and Output
-
-| | |
-|---|---|
-| **Input** | Paper materials in `data/`: the paper PDF, **subfolder(s)** `TeX source`, and the file **`data/questions.txt`** — a numbered list of questions. |
-| **Output** | The file **`output/answers.txt`** — **numbered** answers **in the same order** as the questions. |
-
-**Important:**
-
-1. The format of `answers.txt` is fixed (see examples in the provided papers): for example, the answer to question 3 must begin with the line `## Answer 3`, followed by the answer text;
-
-2. It is likely worth imposing a time limit on how long the agent spends on each question;
-
-3. If the agent skips any question, it must still write the line `## Answer ...` into `answers.txt`, with the answer body containing, for example, `no answer`.
-
----
-
-## 3. Agent Requirements
-
-- Must answer **all** questions about the paper's content, **including** questions that require **analysis of images/diagrams**;
-- **Launch**: a single command from the repository root: `python run.py`;
-- **Model**: **GigaChat-2-Max only**;
-- **Evaluation mode**: the agent operates **autonomously**, in a **closed** environment, **without** participant interaction during the run;
-- **Confidentiality and competition ethics**: it is **forbidden** to transmit **any** content from the paper, questions, or answers **outside** the environment (external APIs, public chats, arbitrary outgoing requests with task source materials). Violation leads to **disqualification**.
-
----
-
-## 4. Permitted Libraries
-
-Libraries for the virtual environment are listed in `pyproject.toml`.
-
----
-
-## 5. Environment Setup
-
-```bash
-uv venv
-uv sync
-```
-
-Only two parameters need to be specified in `.env`:
-
-```bash
-GIGACHAT_CREDENTIALS='<Token provided by the organizers>'
+GIGACHAT_CREDENTIALS='...'
 GIGACHAT_SCOPE='GIGACHAT_API_CORP'
 ```
 
-For the original private challenge submission, the organizers required `.env` inside the submitted archive. This does not apply to the public repository: use `.env.example` locally and never commit `.env` or real credentials.
+Never commit `.env` or a real credential.
 
----
+## Run
 
-## 6. Self-Check (Locally)
-
-After running `python run.py`, execute `src/utils/check_submission.py`. The script checks for the presence of `.env`, the presence of `output/answers.txt`, and that the number of answers matches the number of questions.
+Place the paper materials and `questions.txt` in `data/`, then execute:
 
 ```bash
-python run.py
-python src/utils/check_submission.py
+uv run python run.py
+uv run python -m src.utils.check_submission
 ```
 
----
+Answers are written to `output/answers.txt`. Both numbered questions and
+`## Question N` Markdown blocks are supported; output preserves the matching
+format and contains one answer block per question.
 
-## 7. Submission
+## Evaluation and tests
 
-You submit a **zip archive with code** that will be run on the [evaluation platform](http://risk-hackathon.ru).
+The evaluation harness requires configured GigaChat credentials:
 
-Your code must:
-- run in a clean environment;
-- read data independently from the `data/` folder;
-- save results to the `output/` folder;
-- Maximum agent runtime: **15 minutes per paper**.
+```bash
+uv run python -m src.utils.eval --article-dir data --mode all
+```
 
-The submission limit applies only to successful attempts (number of successful attempts = 1).
+The unit suite is offline and does not access model endpoints:
 
-The platform will verify that answers were produced; answer quality will be evaluated separately, outside the platform.
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Limitations
+
+- LaTeX parsing is heuristic rather than a full TeX interpreter.
+- Figure understanding depends on successful rendering and the vision model.
+- Retrieval thresholds were tuned for the original challenge data and may need
+  recalibration for other corpora.
+- A broad-context fallback uses only material already loaded from the paper;
+  unsupported questions return `no answer`.

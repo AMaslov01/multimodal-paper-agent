@@ -18,7 +18,6 @@ from src.config import (
     PER_VISION_CALL_TIMEOUT_S,
 )
 from src.index.retriever import Plan
-from src.io.answers import format_block
 from src.utils.logging import log
 from src.utils.timing import run_with_timeout
 
@@ -178,14 +177,3 @@ def make_compose(gigachat_chat, deferred: bool = False):
         return {"draft_answer": (content or "").strip(), "timings": timings}
 
     return node
-
-
-def formatter_node(state: AgentState) -> dict:
-    t0 = time.time()
-    text = state.get("draft_answer") or "no answer"
-    fmt = state["format_kind"]
-    idx = state["question_index"]
-    final = format_block(idx, text, fmt)
-    timings = state.get("timings") or {}
-    timings["formatter"] = time.time() - t0
-    return {"final_text": final, "timings": timings}
