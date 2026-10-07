@@ -1,4 +1,47 @@
-# Task: AI Agent for Scientific Literature Analysis
+# Multimodal Scientific Paper QA Agent
+
+An autonomous RAG agent that answers questions about scientific papers from LaTeX sources, PDFs, and figures. It was built around GigaChat-2-Max for a hackathon environment with a strict 15-minute runtime limit and a fixed output format.
+
+## What I implemented
+
+I built the end-to-end solution, including:
+
+- recursive discovery and expansion of multi-file LaTeX projects;
+- extraction of sections, equations, captions, labels, and cross-references;
+- PDF-to-image conversion and vision-based figure descriptions;
+- section-aware chunking and semantic indexing with GigaChat embeddings and ChromaDB;
+- a LangGraph workflow for retrieval planning, scoped search, optional visual analysis, answer generation, and formatting;
+- global retrieval fallbacks, per-question deadlines, cached intermediate artifacts, and valid fallback output when a component fails;
+- a local evaluation harness for retrieval coverage, synthetic recall@5, figure hit rate, latency, and answer self-checks.
+
+The retrieval stage is planner-guided: the model first identifies likely sections and whether a figure is relevant, then searches within that scope and falls back to the full paper when the evidence is insufficient. Figure questions can trigger a separate vision step before the final answer is composed.
+
+## Quick start
+
+```bash
+uv venv
+uv sync
+cp .env.example .env
+```
+
+Add your GigaChat credentials to `.env`, place the paper materials and `questions.txt` in `data/`, then run:
+
+```bash
+python run.py
+python src/utils/check_submission.py
+```
+
+The generated answers are written to `output/answers.txt`.
+
+To run the local evaluation harness:
+
+```bash
+python -m src.utils.eval --article-dir data --mode all
+```
+
+---
+
+## Original task specification
 
 You need to implement an **AI agent** powered by [GigaChat-2-Max](https://developers.sber.ru/docs/ru/gigachat/models/gigachat-2-max) that, given the materials of a scientific paper (LaTeX source, PDF, illustrations), answers questions about the paper — including questions that require **understanding figures and diagrams**.
 
