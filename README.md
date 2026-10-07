@@ -24,7 +24,7 @@ uv sync
 cp .env.example .env
 ```
 
-Add your GigaChat credentials to `.env`, place the paper materials and `questions.txt` in `data/`, then run:
+Add your GigaChat credentials to `.env`, place the paper materials and `questions.txt` in `data/`, then run. Keep `.env` local and never commit credentials to Git.
 
 ```bash
 python run.py
@@ -172,7 +172,7 @@ GIGACHAT_CREDENTIALS='<Token provided by the organizers>'
 GIGACHAT_SCOPE='GIGACHAT_API_CORP'
 ```
 
-`.env` **must** be included in the submitted zip archive.
+For the original private challenge submission, the organizers required `.env` inside the submitted archive. This does not apply to the public repository: use `.env.example` locally and never commit `.env` or real credentials.
 
 ---
 

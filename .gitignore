@@ -9,7 +9,6 @@ __pycache__/
 .DS_Store
 *.log
 
-uv.lock
 .idea/
 .ipynb_checkpoints/
 .env
